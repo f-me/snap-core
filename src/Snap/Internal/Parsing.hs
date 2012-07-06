@@ -164,7 +164,7 @@ pQuotedString = q *> quotedText <* q
                , pure soFar' ]
 
     q      = char '\"'
-    qdtext = matchAll [ isRFCText, (/= '\"'), (/= '\\') ]
+    qdtext = matchAll [ (/= '\"'), (/= '\\') ]
 
 
 ------------------------------------------------------------------------------
