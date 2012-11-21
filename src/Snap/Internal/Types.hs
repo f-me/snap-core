@@ -1,4 +1,5 @@
 {-# LANGUAGE BangPatterns              #-}
+{-# LANGUAGE CPP                       #-}
 {-# LANGUAGE DeriveDataTypeable        #-}
 {-# LANGUAGE ExistentialQuantification #-}
 {-# LANGUAGE FlexibleInstances         #-}
@@ -31,13 +32,20 @@ import           Data.Time
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import           Data.Typeable
+#if MIN_VERSION_base(4,6,0)
+import           Prelude hiding (take)
+#else
 import           Prelude hiding (catch, take)
+#endif
+import           System.PosixCompat.Files hiding (setFileSize)
+import           System.Posix.Types (FileOffset)
 ------------------------------------------------------------------------------
-import           Snap.Internal.Http.Types
 import           Snap.Internal.Exceptions
+import           Snap.Internal.Http.Types
 import           Snap.Internal.Iteratee.Debug
-import           Snap.Util.Readable
 import           Snap.Iteratee hiding (map)
+import qualified Snap.Types.Headers as H
+import           Snap.Util.Readable
 ------------------------------------------------------------------------------
 
 
@@ -257,7 +265,11 @@ instance MonadSnap Snap where
 -- | The Typeable instance is here so Snap can be dynamically executed with
 -- Hint.
 snapTyCon :: TyCon
+#if MIN_VERSION_base(4,4,0)
+snapTyCon = mkTyCon3 "snap-core" "Snap.Core" "Snap"
+#else
 snapTyCon = mkTyCon "Snap.Core.Snap"
+#endif
 {-# NOINLINE snapTyCon #-}
 
 instance Typeable1 Snap where
@@ -871,17 +883,24 @@ runSnap (Snap m) logerr timeoutAction req = do
                  PassOnProcessing _ -> fourohfour
                  EarlyTermination x -> x
 
-    return (_snapRequest ss', resp)
+    let req' = _snapRequest ss'
+
+    resp' <- liftIO $ fixupResponse req' resp
+
+    return (req', resp')
 
   where
+    --------------------------------------------------------------------------
     fourohfour = do
         clearContentLength                  $
           setResponseStatus 404 "Not Found" $
           setResponseBody enum404           $
           emptyResponse
 
+    --------------------------------------------------------------------------
     enum404 = enumBuilder $ mconcat $ map fromByteString html
 
+    --------------------------------------------------------------------------
     html = [ S.concat [ "<!DOCTYPE html>\n"
                       , "<html>\n"
                       , "<head>\n"
@@ -894,10 +913,68 @@ runSnap (Snap m) logerr timeoutAction req = do
            , "\"</code>\n</body></html>"
            ]
 
+    --------------------------------------------------------------------------
     dresp = emptyResponse { rspHttpVersion = rqVersion req }
 
+    --------------------------------------------------------------------------
     ss = SnapState req dresp logerr timeoutAction
 {-# INLINE runSnap #-}
+
+
+
+--------------------------------------------------------------------------
+-- | Post-process a finalized HTTP response:
+--
+-- * fixup content-length header
+-- * properly handle 204/304 responses
+-- * if request was HEAD, remove response body
+--
+-- Note that we do NOT deal with transfer-encoding: chunked or "connection:
+-- close" here.
+fixupResponse :: Request -> Response -> IO Response
+fixupResponse req rsp = {-# SCC "fixupResponse" #-} do
+    let code = rspStatus rsp
+    let rsp' = if code == 204 || code == 304
+                 then handle304 rsp
+                 else rsp
+
+    rsp'' <- do
+        z <- case rspBody rsp' of
+               (Enum _)                  -> return rsp'
+               (SendFile f Nothing)      -> setFileSize f rsp'
+               (SendFile _ (Just (s,e))) -> return $!
+                                            setContentLength (e-s) rsp'
+
+        return $!
+          case rspContentLength z of
+            Nothing   -> deleteHeader "Content-Length" z
+            (Just sz) -> setHeader "Content-Length"
+                                   (toByteString $ fromShow sz)
+                                   z
+
+    -- HEAD requests cannot have bodies per RFC 2616 sec. 9.4
+    if rqMethod req == HEAD
+      then return $! deleteHeader "Transfer-Encoding" $
+           rsp'' { rspBody = Enum $ enumBuilder mempty }
+      else return $! rsp''
+
+  where
+    --------------------------------------------------------------------------
+    setFileSize :: FilePath -> Response -> IO Response
+    setFileSize fp r = {-# SCC "setFileSize" #-} do
+        fs <- liftM fromIntegral $ getFileSize fp
+        return $! r { rspContentLength = Just fs }
+
+    ------------------------------------------------------------------------------
+    getFileSize :: FilePath -> IO FileOffset
+    getFileSize fp = liftM fileSize $ getFileStatus fp
+
+    --------------------------------------------------------------------------
+    handle304 :: Response -> Response
+    handle304 r = setResponseBody (enumBuilder mempty) $
+                  updateHeaders (H.delete "Transfer-Encoding") $
+                  setContentLength 0 r
+{-# INLINE fixupResponse #-}
 
 
 ------------------------------------------------------------------------------

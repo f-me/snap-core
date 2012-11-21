@@ -39,13 +39,17 @@ import           Data.ByteString.Internal (c2w)
 import qualified Data.ByteString.UTF8  as SU
 import           Data.Int
 import           Data.List
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.HashMap.Strict (HashMap)
+import qualified Data.HashMap.Strict as Map
 import           Data.Maybe (fromMaybe, isNothing)
 import           Data.Monoid
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as T
+#if MIN_VERSION_base(4,6,0)
+import           Prelude hiding (show, Show)
+#else
 import           Prelude hiding (catch, show, Show)
+#endif
 import qualified Prelude
 import           System.Directory
 import           System.FilePath
@@ -78,12 +82,12 @@ getSafePath = do
 
 ------------------------------------------------------------------------------
 -- | A type alias for dynamic handlers
-type HandlerMap m = Map FilePath (FilePath -> m ())
+type HandlerMap m = HashMap FilePath (FilePath -> m ())
 
 
 ------------------------------------------------------------------------------
 -- | A type alias for MIME type
-type MimeMap = Map FilePath ByteString
+type MimeMap = HashMap FilePath ByteString
 
 
 ------------------------------------------------------------------------------
@@ -568,7 +572,7 @@ serveFileAs mime fp = do
 
 
 ------------------------------------------------------------------------------
-lookupExt :: a -> Map FilePath a -> FilePath -> a
+lookupExt :: a -> HashMap FilePath a -> FilePath -> a
 lookupExt def m f =
     if null ext
       then def
