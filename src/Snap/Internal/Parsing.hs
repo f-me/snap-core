@@ -8,27 +8,27 @@ module Snap.Internal.Parsing where
 ------------------------------------------------------------------------------
 import           Blaze.ByteString.Builder
 import           Control.Applicative
-import           Control.Arrow (first, second)
+import           Control.Arrow                 (first, second)
 import           Control.Monad
 import           Data.Attoparsec.Char8
 import           Data.Bits
-import           Data.ByteString.Char8 (ByteString)
-import qualified Data.ByteString.Char8 as S
-import           Data.ByteString.Internal (c2w, w2c)
-import qualified Data.ByteString.Lazy.Char8 as L
-import qualified Data.CaseInsensitive as CI
-import           Data.CaseInsensitive (CI)
-import           Data.Char hiding (isDigit, isSpace)
+import           Data.ByteString.Char8         (ByteString)
+import qualified Data.ByteString.Char8         as S
+import           Data.ByteString.Internal      (c2w, w2c)
+import qualified Data.ByteString.Lazy.Char8    as L
+import           Data.CaseInsensitive          (CI)
+import qualified Data.CaseInsensitive          as CI
+import           Data.Char                     hiding (isDigit, isSpace)
 import           Data.Int
-import           Data.List (intersperse)
-import           Data.Map (Map)
-import qualified Data.Map as Map
+import           Data.List                     (intersperse)
+import           Data.Map                      (Map)
+import qualified Data.Map                      as Map
 import           Data.Maybe
 import           Data.Monoid
 import           Data.Word
 import           GHC.Exts
-import           GHC.Word (Word8(..))
-import           Prelude hiding (head, take, takeWhile)
+import           GHC.Word                      (Word8 (..))
+import           Prelude                       hiding (head, take, takeWhile)
 ------------------------------------------------------------------------------
 import           Snap.Internal.Http.Types
 import           Snap.Internal.Parsing.FastSet (FastSet)
@@ -302,7 +302,7 @@ pUrlEscaped = do
     unEncoded :: Char -> DList ByteString -> Parser (DList ByteString)
     unEncoded !c !l' = do
         let l = l' . ((S.singleton c) :)
-        bs   <- takeTill (flip elem "%+")
+        bs   <- takeTill (flip elem ['%', '+'])
         if S.null bs
           then nextChunk l
           else nextChunk $ l . (bs :)
@@ -354,8 +354,9 @@ urlEncodeBuilder = go mempty
 urlEncodeTable :: FastSet
 urlEncodeTable = generateFS f
   where
-    f c = any ($ (w2c c)) [isAlphaNum, flip elem "$-.!*'(),"]
-
+    f c = any ($ (w2c c)) [isAlphaNum, flip elem [ '$', '_', '-', '.', '!'
+                                                 , '*' , '\'', '(', ')'
+                                                 , ',' ] ]
 
 ------------------------------------------------------------------------------
 hexd :: Char -> Builder

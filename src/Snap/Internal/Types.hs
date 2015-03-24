@@ -8,6 +8,7 @@
 {-# LANGUAGE Rank2Types                #-}
 {-# LANGUAGE ScopedTypeVariables       #-}
 {-# LANGUAGE TypeSynonymInstances      #-}
+{-# LANGUAGE StandaloneDeriving        #-}
 
 module Snap.Internal.Types where
 
@@ -272,8 +273,12 @@ snapTyCon = mkTyCon "Snap.Core.Snap"
 #endif
 {-# NOINLINE snapTyCon #-}
 
+#if __GLASGOW_HASKELL__ < 708
 instance Typeable1 Snap where
     typeOf1 _ = mkTyConApp snapTyCon []
+#else
+deriving instance Typeable Snap
+#endif
 
 
 ------------------------------------------------------------------------------
@@ -797,8 +802,8 @@ ipHeaderFilter' :: MonadSnap m => CI ByteString -> m ()
 ipHeaderFilter' header = do
     headerContents <- getHeader header <$> getRequest
 
-    let whitespace = " \t\r\n"
-        ipChrs = ".0123456789"
+    let whitespace = [ ' ', '\t', '\r', '\n' ]
+        ipChrs = [ '.', '0', '1', '2', '3', '4', '5', '6', '7', '8', '9' ]
         trim f s = f (`elem` s)
 
         clean = trim S.takeWhile ipChrs . trim S.dropWhile whitespace
